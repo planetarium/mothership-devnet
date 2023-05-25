@@ -1,0 +1,126 @@
+version: "3.9"
+services:
+  pull-genesis:
+    image: "alpine"
+    command:
+      - /bin/sh
+      - -c
+      - |
+        apk add curl yq
+        curl http://${GENESIS_PROVIDER_URL}/custom_config_data/genesis.json --output /consensus/genesis.json
+        curl http://${GENESIS_PROVIDER_URL}/custom_config_data/genesis.ssz --output /consensus/genesis.ssz
+        curl http://${GENESIS_PROVIDER_URL}/custom_config_data/config.yaml --output /consensus/config.yaml
+        curl http://${GENESIS_PROVIDER_URL}/el/jwtsecret --output /execution/jwtsecret
+        curl http://${GENESIS_PROVIDER_URL}/cl/jwtsecret --output /consensus/jwtsecret
+        curl http://${GENESIS_PROVIDER_URL}/custom_config_data/mnemonics.yaml | yq '.[0].mnemonic' > /validator/mnemonics
+        echo "${VALIDATOR_WALLET_PASSWORD}" > /validator/wallet-password
+    volumes:
+      - ./consensus:/consensus
+      - ./validator:/validator
+  
+  geth-genesis:
+    image: "ethereum/client-go:latest"
+    command: --datadir=/execution init /consensus/genesis.json
+    volumes:
+      - ./execution:/execution
+      - ./consensus:/consensus
+    depends_on:
+      pull-genesis:
+        condition: service_completed_successfully
+
+  geth:
+    image: "ethereum/client-go:latest"
+    command:
+      - --http
+      - --http.api=eth
+      - --http.addr=0.0.0.0
+      - --authrpc.vhosts=*
+      - --authrpc.addr=0.0.0.0
+      - --authrpc.jwtsecret=/execution/jwtsecret
+      - --datadir=/execution
+      - --nodiscover
+      - --syncmode=full
+      
+    ports:
+      - 8551:8551
+      - 8545:8545
+      - 30303:30303
+    depends_on:
+      geth-genesis:
+        condition: service_completed_successfully
+    volumes:
+      - ./execution:/execution
+
+  # Runs a Prysm beacon chain from a specified genesis state created in the previous step
+  # and connects to go-ethereum in the same network as the execution client.
+  # The account used in go-ethereum is set as the suggested fee recipient for transactions
+  # proposed via the validators attached to the beacon node.
+  beacon-chain:
+    image: "gcr.io/prysmaticlabs/prysm/beacon-chain:latest"
+    command:
+      - --datadir=/consensus/beacondata
+      # No peers to sync with in this testnet, so setting to 0
+      - --min-sync-peers=0
+      - --contract-deployment-block=0
+      - --genesis-state=/consensus/genesis.ssz
+      - --bootstrap-node=
+      # The chain configuration file used for setting up Prysm
+      - --chain-config-file=/consensus/config.yaml
+      # We specify the chain id used by our execution client
+      - --accept-terms-of-use
+      - --chain-id=1337
+      - --rpc-host=0.0.0.0
+      - --grpc-gateway-host=0.0.0.0
+      - --execution-endpoint=http://geth:8551
+      - --jwt-secret=/consensus/jwtsecret
+      - --suggested-fee-recipient=${FEE_RECIPIENT}
+      - --monitoring-host=0.0.0.0
+      - --monitoring-port=8080
+      - --p2p-tcp-port=13000
+      - --p2p-udp-port=12000
+    depends_on:
+      geth:
+        condition: service_started
+    ports:
+      - 4000:4000
+      - 3500:3500
+      - 8080:8080
+      - 12000:12000/udp
+      - 13000:13000
+    volumes:
+      - ./consensus:/consensus
+
+  validator-recover-wallet:
+    image: "gcr.io/prysmaticlabs/prysm/validator:latest"
+    command: |
+      wallet
+      recover
+      --accept-terms-of-use=true
+      --mnemonic-file=/validator/mnemonics
+      --skip-mnemonic-25th-word-check=true
+      --num-accounts=64
+      --wallet-dir=/validator/wallet
+      --wallet-password-file=/validator/wallet-password
+    volumes:
+      - ./validator:/validator
+    depends_on:
+      pull-genesis:
+        condition: service_completed_successfully
+
+  validator:
+    image: "gcr.io/prysmaticlabs/prysm/validator:latest"
+    command:
+      - --accept-terms-of-use
+      - --beacon-rpc-provider=beacon-chain:4000
+      - --datadir=/validator/validatordata
+      - --chain-config-file=/consensus/config.yaml
+      - --wallet-dir=/validator/wallet
+      - --wallet-password-file=/validator/wallet-password
+    depends_on:
+      beacon-chain:
+        condition: service_started
+      validator-recover-wallet:
+        condition: service_completed_successfully
+    volumes:
+      - ./consensus:/consensus
+      - ./validator:/validator

@@ -13,37 +13,16 @@ services:
       test: ["CMD", "curl", "-f", "http://localhost:8000"]
       interval: 15s
       start_period: 10s
-
-  pull-genesis:
-    image: "alpine"
-    command:
-      - /bin/sh
-      - -c
-      - |
-        apk add curl yq
-        curl http://genesis-generator:8000/custom_config_data/genesis.json -s --output /consensus/genesis.json
-        curl http://genesis-generator:8000/custom_config_data/genesis.ssz -s --output /consensus/genesis.ssz
-        curl http://genesis-generator:8000/custom_config_data/config.yaml -s --output /consensus/config.yaml
-        curl http://genesis-generator:8000/el/jwtsecret -s --output /execution/jwtsecret
-        curl http://genesis-generator:8000/cl/jwtsecret -s --output /consensus/jwtsecret
-        curl http://genesis-generator:8000/custom_config_data/mnemonics.yaml -s | yq '.[0].mnemonic' | tr -d '\n' > /validator/mnemonics
-        echo "${VALIDATOR_WALLET_PASSWORD}" > /validator/wallet-password
-    volumes:
-      - ./data/consensus:/consensus
-      - ./data/validator:/validator
-    depends_on:
-      genesis-generator:
-        condition: service_healthy
   
   geth-genesis:
     image: "ethereum/client-go:latest"
-    command: --datadir=/execution init /consensus/genesis.json
+    command: --datadir=/execution init /genesis/custom_config_data/genesis.json
     volumes:
+      - ./data/genesis-generator:/genesis
       - ./data/execution:/execution
-      - ./data/consensus:/consensus
     depends_on:
-      pull-genesis:
-        condition: service_completed_successfully
+     genesis-generator:
+        condition: service_healthy
 
   geth:
     image: "ethereum/client-go:latest"
@@ -53,7 +32,7 @@ services:
       - --http.addr=0.0.0.0
       - --authrpc.vhosts=*
       - --authrpc.addr=0.0.0.0
-      - --authrpc.jwtsecret=/execution/jwtsecret
+      - --authrpc.jwtsecret=/genesis/el/jwtsecret
       - --datadir=/execution
       - --nat=extip:15.168.63.137
       - --networkid=133711
@@ -68,40 +47,26 @@ services:
         condition: service_completed_successfully
     volumes:
       - ./data/execution:/execution
+      - ./data/genesis-generator:/genesis
     healthcheck:
       test: ["CMD", "nc", "-z", "localhost", "8551"]
       interval: 15s
       start_period: 10s
 
-  # Runs a Prysm beacon chain from a specified genesis state created in the previous step
-  # and connects to go-ethereum in the same network as the execution client.
-  # The account used in go-ethereum is set as the suggested fee recipient for transactions
-  # proposed via the validators attached to the beacon node.
   beacon-chain:
-    image: "gcr.io/prysmaticlabs/prysm/beacon-chain:latest"
+    image: "sigp/lighthouse:latest"
     command:
-      - --datadir=/consensus/beacondata
-      # No peers to sync with in this testnet, so setting to 0
-      - --min-sync-peers=0
-      - --contract-deployment-block=0
-      - --genesis-state=/consensus/genesis.ssz
-      - --bootstrap-node=
-      # The chain configuration file used for setting up Prysm
-      - --chain-config-file=/consensus/config.yaml
-      # We specify the chain id used by our execution client
-      - --accept-terms-of-use
-      - --chain-id=133711
-      - --rpc-host=0.0.0.0
-      - --grpc-gateway-host=0.0.0.0
+      - lighthouse
+      - beacon_node
+      - --http-address=0.0.0.0
+      - --http-allow-sync-stalled
       - --execution-endpoint=http://geth:8551
-      - --jwt-secret=/execution/jwtsecret
-      - --suggested-fee-recipient=${FEE_RECIPIENT}
-      - --monitoring-host=0.0.0.0
-      - --monitoring-port=8080
-      - --p2p-host-ip=15.168.63.137
-      - --p2p-tcp-port=13000
-      - --p2p-udp-port=12000
-        #      - --verbosity=trace 
+      - --execution-jwt=/genesis/el/jwtsecret
+      - --datadir=/consensus/beacon
+      - --testnet-dir=/genesis/custom_config_data
+      - --disable-packet-filter
+      - --disable-peer-scoring
+      - --staking
     depends_on:
       geth:
         condition: service_healthy
@@ -109,39 +74,38 @@ services:
       - 4000:4000
       - 3500:3500
       - 8080:8080
-      - 12000:12000/udp
-      - 13000:13000
+      - 5052:5052
     volumes:
       - ./data/consensus:/consensus
-      - ./data/execution:/execution
+      - ./data/genesis-generator:/genesis
 
   validator-recover-wallet:
-    image: "gcr.io/prysmaticlabs/prysm/validator:latest"
-    command: |
-      wallet
-      recover
-      --accept-terms-of-use
-      --mnemonic-file=/validator/mnemonics
-      --skip-mnemonic-25th-word-check=true
-      --num-accounts=4
-      --wallet-dir=/validator/wallet
-      --wallet-password-file=/validator/wallet-password
+    image: "sigp/lighthouse:latest"
+    command:
+      - lighthouse
+      - account_manager
+      - validator
+      - recover
+      - --count=4
+      - --datadir=/validator
+      - --mnemonic-path=/genesis/custom_config_data/mnemonics.txt
     volumes:
       - ./data/validator:/validator
+      - ./data/genesis-generator:/genesis
     depends_on:
-      pull-genesis:
-        condition: service_completed_successfully
+      genesis-generator:
+        condition: service_healthy
 
   validator:
-    image: "gcr.io/prysmaticlabs/prysm/validator:latest"
+    image: "sigp/lighthouse:latest"
     command:
-      - --accept-terms-of-use
-      - --beacon-rpc-provider=beacon-chain:4000
-      - --datadir=/validator/validatordata
-      - --chain-config-file=/consensus/config.yaml
-      - --wallet-dir=/validator/wallet
-      - --wallet-password-file=/validator/wallet-password
-        #      - --verbosity=trace
+      - lighthouse
+      - validator
+      - --init-slashing-protection
+      - --datadir=/validator
+      - --beacon-nodes=http://beacon-chain:5052
+      - --testnet-dir=/genesis/custom_config_data
+      - --suggested-fee-recipient=${FEE_RECIPIENT}
     depends_on:
       beacon-chain:
         condition: service_started
@@ -150,3 +114,4 @@ services:
     volumes:
       - ./data/consensus:/consensus
       - ./data/validator:/validator
+      - ./data/genesis-generator:/genesis

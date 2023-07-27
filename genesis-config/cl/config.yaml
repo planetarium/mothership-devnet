@@ -9,7 +9,7 @@ MIN_GENESIS_ACTIVE_VALIDATOR_COUNT: $NUMBER_OF_VALIDATORS
 # This is an invalid valid and should be updated when you create the genesis
 GENESIS_FORK_VERSION: $GENESIS_FORK_VERSION
 GENESIS_DELAY: $GENESIS_DELAY
-
+MIN_GENESIS_TIME: $GENESIS_TIMESTAMP
 
 # Forking
 # ---------------------------------------------------------------
@@ -38,6 +38,11 @@ SECONDS_PER_SLOT: 12
 # 2**0 (= 1) epochs ~1 hours
 MIN_VALIDATOR_WITHDRAWABILITY_DELAY: 1
 
+SECONDS_PER_ETH1_BLOCK: 12
+
+SHARD_COMMITTEE_PERIOD: 256
+
+ETH1_FOLLOW_DISTANCE: 2048
 
 # Validator cycle
 # ---------------------------------------------------------------

@@ -42,6 +42,7 @@ gen_cl_config(){
         envsubst < /config/cl/config.yaml > /data/custom_config_data/config.yaml
         envsubst < /config/cl/mnemonics.yaml > $tmp_dir/mnemonics.yaml
         cp $tmp_dir/mnemonics.yaml /data/custom_config_data/mnemonics.yaml
+	echo $EL_AND_CL_MNEMONIC > /data/custom_config_data/mnemonics.txt
         # Create deposit_contract.txt and deploy_block.txt
         grep DEPOSIT_CONTRACT_ADDRESS /data/custom_config_data/config.yaml | cut -d " " -f2 > /data/custom_config_data/deposit_contract.txt
         echo $CL_EXEC_BLOCK > /data/custom_config_data/deploy_block.txt
@@ -98,4 +99,4 @@ case $1 in
 esac
 
 # Start webserver
-cd /data && exec python -m SimpleHTTPServer "$SERVER_PORT"
+cd /data && exec python3 -m http.server "$SERVER_PORT"

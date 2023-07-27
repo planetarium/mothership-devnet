@@ -49,12 +49,14 @@ services:
     image: "ethereum/client-go:latest"
     command:
       - --http
-      - --http.api=eth
+      - --http.api=eth,net,web3
       - --http.addr=0.0.0.0
       - --authrpc.vhosts=*
       - --authrpc.addr=0.0.0.0
       - --authrpc.jwtsecret=/execution/jwtsecret
       - --datadir=/execution
+      - --nat=extip:15.168.63.137
+      - --networkid=133711
       - --nodiscover
       - --syncmode=full
     ports:
@@ -88,7 +90,7 @@ services:
       - --chain-config-file=/consensus/config.yaml
       # We specify the chain id used by our execution client
       - --accept-terms-of-use
-      - --chain-id=1337
+      - --chain-id=133711
       - --rpc-host=0.0.0.0
       - --grpc-gateway-host=0.0.0.0
       - --execution-endpoint=http://geth:8551
@@ -96,8 +98,10 @@ services:
       - --suggested-fee-recipient=${FEE_RECIPIENT}
       - --monitoring-host=0.0.0.0
       - --monitoring-port=8080
+      - --p2p-host-ip=15.168.63.137
       - --p2p-tcp-port=13000
       - --p2p-udp-port=12000
+        #      - --verbosity=trace 
     depends_on:
       geth:
         condition: service_healthy
@@ -137,6 +141,7 @@ services:
       - --chain-config-file=/consensus/config.yaml
       - --wallet-dir=/validator/wallet
       - --wallet-password-file=/validator/wallet-password
+        #      - --verbosity=trace
     depends_on:
       beacon-chain:
         condition: service_started

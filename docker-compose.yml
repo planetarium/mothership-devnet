@@ -128,7 +128,7 @@ services:
       - ./l2-config:/config
 
   op-geth:
-    image: "us-docker.pkg.dev/oplabs-tools-artifacts/images/op-geth:latest"
+    image: "ghcr.io/longfin/op-geth:v1.101106.0-eip-7212"
     command:
       - --datadir=/data
       - --http

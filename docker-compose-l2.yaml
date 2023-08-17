@@ -109,3 +109,15 @@ services:
     depends_on:
       op-node:
         condition: service_healthy
+
+  aa-bundler:
+    image: "ghcr.io/longfin/stackup-bundler:v0.6.14"
+    environment:
+      - ERC4337_BUNDLER_ETH_CLIENT_URL=http://op-geth:8545
+      - ERC4337_BUNDLER_PRIVATE_KEY=${AA_BUNDLER_KEY}
+    ports:
+      - 14337:4337
+    depends_on:
+      op-geth:
+        condition: service_healthy
+

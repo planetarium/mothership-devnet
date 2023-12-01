@@ -1,0 +1,12 @@
+version: '3.8'
+name: 'stackup-bundler'
+services:
+  stackup-bundler:
+    build:
+      context: .
+    ports:
+      - "${ERC4337_BUNDLER_PORT:-4337}:4337/tcp"
+    environment:
+      ERC4337_BUNDLER_ETH_CLIENT_URL: "${ERC4337_BUNDLER_ETH_CLIENT_URL}"
+      ERC4337_BUNDLER_PRIVATE_KEY: "${ERC4337_BUNDLER_PRIVATE_KEY}"
+      ERC4337_BUNDLER_SUPPORTED_ENTRY_POINTS: "${ERC4337_BUNDLER_SUPPORTED_ENTRY_POINTS}"
